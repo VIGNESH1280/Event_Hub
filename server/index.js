@@ -4,6 +4,8 @@ import mongoose from "mongoose"
 import dotenv from "dotenv"
 import dns from "dns"
 import authRoutes from "./routes/auth.js"
+import eventRoutes from "./routes/events.js"
+import bookingRoutes from "./routes/booking.js"
 
 dotenv.config()
 dns.setServers(["1.1.1.1", "8.8.8.8"]);
@@ -15,8 +17,12 @@ const app = express()
 app.use(cors({
     origin: "*"
 }))
-app.use("/api/auth", authRoutes)
 app.use(express.json())
+
+
+app.use("/api/auth", authRoutes)
+app.use('/api/events', eventRoutes)
+app.use('/api/bookings', bookingRoutes)
 
 
 mongoose.connect(process.env.MONGO_DB_URI)

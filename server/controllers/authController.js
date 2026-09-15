@@ -1,9 +1,14 @@
 import User from '../models/User'
 import bcrypt from "bcrypt"
-import { sendOTPEmail } from '../utils/email';
+import { sendOTPEmail } from '../utils/email.js';
 import OTP from '../models/OTP';
+import jwt from 'jsonwebtoken'
 
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
+const generateToken = (id, role) => {
+    return jwt.sign({ id, role }, process.env.TOKEN_SECRET, { expiresIn: '7d' })
+}
+
 
 const registerUser = async (req, res) => {
     try {
@@ -34,4 +39,79 @@ const registerUser = async (req, res) => {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 }
-export default registerUser
+
+const login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        const user = await User.findOne({ email });
+        if (!user) return res.status(400).json({ message: 'Invalid credentials' });
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
+
+
+
+        //The user already registered but haven't verified himself yet (maybe he closed the browser without OTP verification),
+        //    so we need to check once again weather the user is verified or not at the time of the login 
+        if (!user.isVerified && user.role !== 'admin') {
+            const otp = generateOTP();
+            await OTP.findOneAndDelete({ email: user.email, action: 'account_verification' });
+            await OTP.create({ email: user.email, otp, action: 'account_verification' });
+            await sendOTPEmail(user.email, otp, 'account_verification');
+            return res.status(403).json({ message: 'Account not verified', needsVerification: true, email: user.email });
+        }
+
+        res.json({
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            token: generateToken(user._id, user.role)
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+
+const verifyOTP = async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+        const validOTP = await OTP.findOne({ email, otp, action: 'account_verification' });
+
+        if (!validOTP) {
+            return res.status(400).json({ message: 'Invalid or expired OTP' });
+        }
+
+        const user = await User.findOneAndUpdate({ email }, { isVerified: true }, { new: true });
+        await OTP.deleteOne({ _id: validOTP._id }); // Delete OTP after usage
+
+        res.json({
+            _id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            token: generateToken(user.id, user.role)
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error' });
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
